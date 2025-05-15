@@ -1,0 +1,28 @@
+$emails = Get-Content -Path "C:\Users\VPRD-NG\Desktop\UserPrincipleNames-TEST.txt"
+$results = @()
+$results2 = @()
+$unmatchedEmails = @()
+
+foreach ($email in $emails) {
+    $user = Get-ADUser -Filter {UserPrincipalName -eq $email} -Properties EmailAddress, utexasEduAzureSingle1
+    $user2 = Get-ADUser -Filter {utexasEduAzureSingle1 -eq $email} -Properties EmailAddress, utexasEduAzureSingle1
+
+    if ($null -ne $user -or $null -ne $user2) {
+        if ($null -ne $user) {
+            $results += $user | Select-Object SamAccountName, EmailAddress, utexasEduAzureSingle1
+        }
+        if ($null -ne $user2) {
+            $results2 += $user2 | Select-Object SamAccountName, EmailAddress, utexasEduAzureSingle1
+        }
+    } else {
+        $unmatchedEmails += $email
+    }
+}
+
+$csvPath = "C:\temp\Matched_Users.csv"
+
+$results | Export-Csv -Path $csvPath -NoTypeInformation
+$results2 | Export-Csv -Path $csvPath -NoTypeInformation -Append
+
+
+$unmatchedEmails | ForEach-Object { [PSCustomObject]@{Email=$_} } | Export-Csv -Path "C:\temp\Unmatched_Users.csv" -NoTypeInformation
