@@ -1,0 +1,71 @@
+# Specify your AD group name
+$groupName = "VPRD-Smartsheet"
+
+# Path to the CSV with user info
+$csvPath = "C:\temp\Matched_Users.csv"
+
+$logpath = "C:\temp\changes_$(Get-Date -format MM-dd-yyyy_hh-mm).log"
+
+# Import the CSV
+$users = Import-Csv -Path $csvPath
+
+# Extract list of user EIDs from CSV
+$csvUserEIDs = $users.SamAccountName
+
+Start-Transcript -Path $logpath -append
+
+# Function to synchronize group members with CSV
+function Sync-GroupMembers {
+    param (
+        [string] $GroupName,
+        [string[]] $DesiredMembers
+    )
+
+    # Get current members of the group
+    try {
+        $currentMembers = Get-ADGroupMember -Identity $GroupName -Recursive | Where-Object { $_.objectClass -eq 'user' }
+        $currentUserEIDs = $currentMembers.SamAccountName
+    } catch {
+        Write-Warning "Failed to retrieve current members of ${$GroupName}: $_"
+        return
+    }
+
+    # Determine users to add (in CSV but not in group)
+    $toAdd = $DesiredMembers | Where-Object { $_ -notin $currentUserEIDs }
+
+    # Determine users to remove (in group but not in CSV)
+    $toRemove = $currentUserEIDs | Where-Object { $_ -notin $DesiredMembers }
+
+    # Add new users
+    foreach ($userEID in $toAdd) {
+        try {
+            # Check if user is already a member to avoid redundant addition
+            if ($currentUserEIDs -notcontains $userEID) {
+                Add-ADGroupMember -Identity $GroupName -Members $userEID
+                Write-Host "Added $userEID to $GroupName"
+            } else {
+                # User is already a member, so skip logging addition
+                # (Optional: log that user was already a member)
+            }
+        } catch {
+            Write-Warning "Failed to add ${$userEID}: $_"
+        }
+    }
+
+    # Remove users not in CSV
+    foreach ($userEID in $toRemove) {
+        try {
+            Remove-ADGroupMember -Identity $GroupName -Members $userEID -Confirm:$false
+            Write-Host "Removed $userEID from $GroupName"
+        } catch {
+            Write-Warning "Failed to remove ${$userEID}: $_"
+        }
+    }
+}
+
+# First, synchronize group membership
+Sync-GroupMembers -GroupName $groupName -DesiredMembers $csvUserEIDs
+
+# No need for the second loop to add users again, as it's handled above
+
+Stop-Transcript
